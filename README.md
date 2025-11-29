@@ -1,3 +1,9 @@
+![Python CI](https://github.com/KazeKaze93/Image-Compressor/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
 # Image Compressor
 
 **Image Compressor** — это простое приложение для сжатия изображений, написанное на Python с использованием библиотеки PyQt5 для графического интерфейса и Pillow для обработки изображений. Приложение позволяет уменьшать размер и качество изображений, сохраняя их в различных форматах (JPEG, PNG, WebP).
