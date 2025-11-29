@@ -21,7 +21,7 @@ class TestImageCompression(unittest.TestCase):
         output_path = "dummy_compressed.jpg"
         quality = 85
         output_format = "JPEG"  # <-- Добавили
-        resize_ratio = 100      # <-- Добавили (100% размер)
+        resize_ratio = 1.0      # <-- Добавили (100% размер)
         
         compress_image(input_path, output_path, quality, output_format, resize_ratio)
         
