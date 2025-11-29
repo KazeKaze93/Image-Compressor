@@ -10,23 +10,24 @@ from algorithms import compress_image
 
 class TestImageCompression(unittest.TestCase):
     
+    # Мокаем и Image.open, и os.path.getsize (чтобы не лезть в файловую систему)
+    @patch('os.path.getsize')
     @patch('PIL.Image.open')
-    def test_compress_image_calls_save(self, mock_open):
-        # --- НАСТРОЙКА МОКА (FIX) ---
+    def test_compress_image_calls_save(self, mock_open, mock_getsize):
+        # 1. Создаем наш мок картинки
         mock_img = MagicMock()
         
-        # 1. Если код использует 'with Image.open(...) as img', 
-        # то img берется из метода __enter__. Настраиваем его:
+        # 2. Настраиваем Context Manager правильно!
+        # Когда вызывается open(), он возвращает объект-контекст.
+        # Когда у контекста вызывается __enter__, он возвращает нашу картинку.
         mock_open.return_value.__enter__.return_value = mock_img
         
-        # 2. На случай, если код не использует with, а просто img = open(...)
-        mock_open.return_value = mock_img
-
-        # 3. Если код делает img = img.convert(...) или img.resize(...),
-        # PIL обычно возвращает новый объект. Мы заставляем мок возвращать сам себя,
-        # чтобы цепочка вызовов не прерывалась.
+        # 3. Настраиваем методы самой картинки, чтобы они возвращали self (для цепочек вызовов)
         mock_img.convert.return_value = mock_img
         mock_img.resize.return_value = mock_img
+        
+        # 4. Настраиваем getsize, чтобы он возвращал фиктивный размер (например, 1024 байта)
+        mock_getsize.return_value = 1024
         
         # --- ЗАПУСК ---
         input_path = "dummy.jpg"
@@ -35,11 +36,18 @@ class TestImageCompression(unittest.TestCase):
         output_format = "JPEG"
         resize_ratio = 1.0 
         
-        compress_image(input_path, output_path, quality, output_format, resize_ratio)
+        result, message = compress_image(input_path, output_path, quality, output_format, resize_ratio)
         
         # --- ПРОВЕРКИ ---
+        
+        # Проверяем, что картинка открывалась
         mock_open.assert_called_with(input_path)
+        
+        # Проверяем, что сохранение было вызвано
         mock_img.save.assert_called()
         
+        # Проверяем, что функция успешно завершилась (Result == True)
+        self.assertTrue(result, f"Функция вернула ошибку: {message}")
+
 if __name__ == '__main__':
     unittest.main()
