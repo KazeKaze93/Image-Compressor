@@ -36,4 +36,4 @@ A modern, high-performance desktop application for image compression. Built with
 ## 📦 Build EXE (Windows)
 To create a standalone executable file:
 ```bash
-pyinstaller --noconfirm --onefile --windowed --name "CompressorPro" --collect-all qt_material main.py
+python -m PyInstaller --noconfirm --onefile --windowed --name "CompressorPro" --collect-all qt_material --collect-all PyQt5 main.py
