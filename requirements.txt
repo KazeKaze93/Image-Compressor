@@ -1,5 +1,5 @@
-PyQt5==5.15.9
-Pillow==10.0.0
+PyQt5>=5.15.10
+Pillow>=11.0.0
 pytest==7.4.0
 flake8==6.0.0
 mock==5.1.0

@@ -1,155 +1,151 @@
+import sys
+import traceback
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QMessageBox
+    QFileDialog, QMessageBox, QProgressBar
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from algorithms import compress_image
+from models import CompressionResult
+
+# --- WORKER THREAD ---
+# Выносим тяжелую задачу в отдельный поток
+class CompressionWorker(QThread):
+    finished = pyqtSignal(CompressionResult)
+    error = pyqtSignal(str)
+
+    def __init__(self, input_path, output_path, quality, output_format, resize_ratio):
+        super().__init__()
+        self.input_path = input_path
+        self.output_path = output_path
+        self.quality = quality
+        self.output_format = output_format
+        self.resize_ratio = resize_ratio
+
+    def run(self):
+        try:
+            result = compress_image(
+                self.input_path, 
+                self.output_path, 
+                self.quality, 
+                self.output_format, 
+                self.resize_ratio
+            )
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
+# --- MAIN WINDOW ---
 class ImageCompressorApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Сжатие изображений")
-        self.setFixedSize(500, 150)  # Фиксированный размер окна
+        self.setWindowTitle("Image Compressor Pro")
+        self.setFixedSize(500, 200) # Чуть увеличил высоту под прогресс-бар
 
-        # Основной виджет и макет
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
 
-        # Создаем и настраиваем поля ввода
-        self.setup_input_fields()
-        self.setup_output_fields()
-        self.setup_quality_resize_fields()
-        self.setup_compress_button()
+        self.setup_ui()
 
-    def setup_input_fields(self):
-        """Настройка поля для выбора входного файла."""
-        input_layout = QHBoxLayout()
-        input_label = QLabel("Выберите изображение для сжатия:")
-        self.input_entry = QLineEdit()
-        self.input_entry.setFixedWidth(200)  # Фиксированная ширина поля ввода
-        input_button = QPushButton("Обзор...")
-        input_button.setFixedWidth(80)  # Фиксированная ширина кнопки
-        input_button.clicked.connect(self.select_input_file)
+    def setup_ui(self):
+        # Input
+        self.input_entry = self._create_file_selector("Входной файл:", self.select_input_file)
+        # Output
+        self.output_entry = self._create_file_selector("Выходной файл:", self.select_output_file)
+        
+        # Params
+        self.quality_entry = QLineEdit("85")
+        self.resize_entry = QLineEdit("100")
+        self.setup_params_row()
 
-        input_layout.addWidget(input_label)
-        input_layout.addWidget(self.input_entry)
-        input_layout.addWidget(input_button)
-        self.layout.addLayout(input_layout)
+        # Progress Bar (скрыт по умолчанию)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0) # Бесконечный спиннер
+        self.progress_bar.hide()
+        self.layout.addWidget(self.progress_bar)
 
-    def setup_output_fields(self):
-        """Настройка поля для выбора выходного файла."""
-        output_layout = QHBoxLayout()
-        output_label = QLabel("Сохранить как:")
-        self.output_entry = QLineEdit()
-        self.output_entry.setFixedWidth(200)  # Фиксированная ширина поля ввода
-        output_button = QPushButton("Обзор...")
-        output_button.setFixedWidth(80)  # Фиксированная ширина кнопки
-        output_button.clicked.connect(self.select_output_file)
-
-        output_layout.addWidget(output_label)
-        output_layout.addWidget(self.output_entry)
-        output_layout.addWidget(output_button)
-        self.layout.addLayout(output_layout)
-
-    def setup_quality_resize_fields(self):
-        """Настройка полей для ввода качества и уменьшения разрешения."""
-        quality_resize_layout = QHBoxLayout()
-
-        # Поле для ввода качества
-        quality_label = QLabel("Качество сжатия (%):")
-        quality_label.setFixedWidth(150)  # Фиксированная ширина метки
-        self.quality_entry = QLineEdit()
-        self.quality_entry.setFixedWidth(50)  # Фиксированная ширина поля ввода
-        self.quality_entry.setText("100")  # Значение по умолчанию
-
-        # Поле для ввода уменьшения разрешения
-        resize_label = QLabel("Уменьшение разрешения (%):")
-        resize_label.setFixedWidth(150)  # Фиксированная ширина метки
-        self.resize_entry = QLineEdit()
-        self.resize_entry.setFixedWidth(50)  # Фиксированная ширина поля ввода
-        self.resize_entry.setText("100")  # Значение по умолчанию
-
-        # Добавляем элементы в макет
-        quality_resize_layout.addWidget(quality_label)
-        quality_resize_layout.addWidget(self.quality_entry)
-        quality_resize_layout.addSpacing(20)  # Отступ между полями
-        quality_resize_layout.addWidget(resize_label)
-        quality_resize_layout.addWidget(self.resize_entry)
-
-        # Выравниваем содержимое влево
-        quality_resize_layout.setAlignment(Qt.AlignLeft)
-        self.layout.addLayout(quality_resize_layout)
-
-    def setup_compress_button(self):
-        """Настройка кнопки для запуска сжатия."""
-        self.compress_button = QPushButton("Сжать изображение")
-        self.compress_button.setFixedWidth(150)  # Фиксированная ширина кнопки
+        # Button
+        self.compress_button = QPushButton("Сжать (Start)")
         self.compress_button.clicked.connect(self.start_compression)
-        self.layout.addWidget(self.compress_button, alignment=Qt.AlignCenter)  # Выравниваем по центру
+        self.layout.addWidget(self.compress_button)
+
+    def _create_file_selector(self, label_text, handler):
+        layout = QHBoxLayout()
+        layout.addWidget(QLabel(label_text))
+        entry = QLineEdit()
+        btn = QPushButton("...")
+        btn.setFixedWidth(40)
+        btn.clicked.connect(handler)
+        layout.addWidget(entry)
+        layout.addWidget(btn)
+        self.layout.addLayout(layout)
+        return entry
+
+    def setup_params_row(self):
+        layout = QHBoxLayout()
+        layout.addWidget(QLabel("Качество (%):"))
+        self.quality_entry.setFixedWidth(50)
+        layout.addWidget(self.quality_entry)
+        
+        layout.addSpacing(20)
+        
+        layout.addWidget(QLabel("Ресайз (%):"))
+        self.resize_entry.setFixedWidth(50)
+        layout.addWidget(self.resize_entry)
+        layout.addStretch()
+        self.layout.addLayout(layout)
 
     def select_input_file(self):
-        """Открывает диалог выбора входного файла."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Выберите изображение", "",
-                                                   "Изображения (*.jpg *.jpeg *.png *.webp)")
-        if file_path:
-            self.input_entry.setText(file_path)
+        path, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.jpg *.png *.webp)")
+        if path: self.input_entry.setText(path)
 
     def select_output_file(self):
-        """Открывает диалог выбора выходного файла."""
-        file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить сжатое изображение", "",
-                                                   "JPEG (*.jpg);;PNG (*.png);;WebP (*.webp)")
-        if file_path:
-            self.output_entry.setText(file_path)
+        path, _ = QFileDialog.getSaveFileName(self, "Save Image", "", "JPEG (*.jpg);;PNG (*.png);;WebP (*.webp)")
+        if path: self.output_entry.setText(path)
+
+    def toggle_ui(self, enable):
+        """Блокирует интерфейс во время работы"""
+        self.compress_button.setEnabled(enable)
+        self.input_entry.setEnabled(enable)
+        if not enable:
+            self.progress_bar.show()
+        else:
+            self.progress_bar.hide()
 
     def start_compression(self):
-        """Запускает процесс сжатия изображения."""
-        input_path = self.input_entry.text()
-        output_path = self.output_entry.text()
-        quality = self.quality_entry.text()
-        resize_ratio = self.resize_entry.text()
-
-        # Проверка наличия входного и выходного файлов
-        if not input_path or not output_path:
-            QMessageBox.warning(self, "Внимание", "Пожалуйста, выберите входной и выходной файлы.")
-            return
-
-        # Проверка корректности ввода качества
+        # Валидация простая, UI не должен сильно думать
         try:
-            quality = int(quality)
-            if quality < 1 or quality > 100:
-                QMessageBox.warning(self, "Внимание", "Качество должно быть от 1 до 100.")
-                return
-        except ValueError:
-            QMessageBox.warning(self, "Внимание", "Качество должно быть целым числом от 1 до 100.")
+            quality = int(self.quality_entry.text())
+            resize = int(self.resize_entry.text()) / 100.0
+            in_path = self.input_entry.text()
+            out_path = self.output_entry.text()
+            
+            if not in_path or not out_path:
+                raise ValueError("Выберите файлы")
+            
+            fmt = out_path.split(".")[-1].upper()
+            if fmt == "JPG": fmt = "JPEG"
+
+        except ValueError as e:
+            QMessageBox.warning(self, "Error", str(e))
             return
 
-        # Проверка корректности ввода уменьшения разрешения
-        try:
-            resize_ratio = int(resize_ratio)
-            if resize_ratio < 10 or resize_ratio > 100:
-                QMessageBox.warning(self, "Внимание", "Уменьшение разрешения должно быть от 10 до 100%.")
-                return
-            resize_ratio = resize_ratio / 100.0  # Преобразуем проценты в дробное число
-        except ValueError:
-            QMessageBox.warning(self, "Внимание", "Уменьшение разрешения должно быть целым числом от 10 до 100.")
-            return
+        # Запуск потока
+        self.toggle_ui(False)
+        self.worker = CompressionWorker(in_path, out_path, quality, fmt, resize)
+        self.worker.finished.connect(self.on_success)
+        self.worker.error.connect(self.on_error)
+        self.worker.start()
 
-        # Определяем формат выходного файла
-        output_format = output_path.split(".")[-1].upper()
-        if output_format not in ["JPEG", "JPG", "PNG", "WEBP"]:
-            QMessageBox.warning(self, "Внимание", "Неподдерживаемый формат файла. Используйте JPEG, PNG или WebP.")
-            return
+    def on_success(self, res: CompressionResult):
+        self.toggle_ui(True)
+        msg = (f"Успех!\n"
+               f"Размер: {res.original_size_mb:.2f}MB -> {res.compressed_size_mb:.2f}MB\n"
+               f"Сжато на: {res.compression_ratio:.1f}%")
+        QMessageBox.information(self, "Done", msg)
 
-        # Выполняем сжатие изображения
-        success, result = compress_image(input_path, output_path, quality, output_format, resize_ratio)
-        if success:
-            QMessageBox.information(self, "Успех", f"Изображение успешно сжато!\n"
-                                                   f"Исходный размер: {result['original_size_mb']:.2f} МБ\n"
-                                                   f"Сжатый размер: {result['compressed_size_mb']:.2f} МБ\n"
-                                                   f"Сжатие: {result['compression_ratio']:.2f}%\n"
-                                                   f"Исходное разрешение: {result['original_resolution'][0]}x{result['original_resolution'][1]}\n"
-                                                   f"Конечное разрешение: {result['final_resolution'][0]}x{result['final_resolution'][1]}")
-        else:
-            QMessageBox.critical(self, "Ошибка", result)
+    def on_error(self, err_msg):
+        self.toggle_ui(True)
+        QMessageBox.critical(self, "Error", err_msg)
