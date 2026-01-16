@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 from PIL import Image
 from models import CompressionResult
@@ -36,19 +37,22 @@ def compress_image(
             final_res = img.size
 
             # 2. Сохранение с оптимизацией под формат
-            save_params = {
-                "optimize": True,
-            }
+            save_params = {}
 
             if output_format.upper() in ["JPEG", "JPG"]:
-                # Progressive: лучше для веба. Subsampling 0: сохраняет цветовые детали.
+                # Convert to RGB if needed
                 if img.mode in ("RGBA", "P"): 
                     img = img.convert("RGB")
+                
+                # JPEG Optimization: subsampling=2 (4:2:0) if quality < 95, subsampling=0 if quality >= 95
+                subsampling = 2 if quality < 95 else 0
+                
                 save_params.update({
                     "format": "JPEG",
                     "quality": quality,
                     "progressive": True,
-                    "subsampling": 0 
+                    "optimize": True,
+                    "subsampling": subsampling
                 })
                 
             elif output_format.upper() == "WEBP":
@@ -72,11 +76,38 @@ def compress_image(
             else:
                 raise ValueError(f"Неподдерживаемый формат: {output_format}")
 
+            # Сохраняем изображение в память для возможного пересохранения
+            img_copy = img.copy()
+            
             # Сохраняем
             img.save(output_path, **save_params)
 
-            # Результат
+            # SIZE GUARANTEE: Compare compressed_size with original_size
             compressed_size = get_size_mb(output_path)
+            
+            # FAILSAFE: If compressed_size > original_size, attempt recovery
+            if compressed_size > original_size:
+                if output_format.upper() in ["JPEG", "JPG"]:
+                    # Attempt second save with quality=85 and subsampling=2
+                    img_copy.save(output_path, format="JPEG", quality=85, optimize=True, progressive=True, subsampling=2)
+                    compressed_size = get_size_mb(output_path)
+                    
+                    # If STILL larger, copy original to ensure best version
+                    if compressed_size > original_size:
+                        shutil.copy2(input_path, output_path)
+                        compressed_size = original_size
+                elif output_format.upper() == "WEBP":
+                    # For WebP, try quality=80
+                    img_copy.save(output_path, format="WEBP", quality=80, method=6)
+                    compressed_size = get_size_mb(output_path)
+                    
+                    if compressed_size > original_size:
+                        shutil.copy2(input_path, output_path)
+                        compressed_size = original_size
+                else:
+                    # For PNG and other formats, copy original
+                    shutil.copy2(input_path, output_path)
+                    compressed_size = original_size
             
             return CompressionResult(
                 original_size_mb=original_size,
